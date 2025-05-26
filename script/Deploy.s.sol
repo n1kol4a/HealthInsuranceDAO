@@ -27,12 +27,14 @@ contract Deploy is Script {
         console2.log("MyGovernor deployed at:", address(governor));
 
         // 4. Deploy HealthInsuranceDAO
-        HealthInsuranceDAO dao = new HealthInsuranceDAO(address(governor), deployer, address(token), devVault);
+        HealthInsuranceDAO dao = new HealthInsuranceDAO(deployer, address(governor), address(token), devVault);
         console2.log("HealthInsuranceDAO deployed at:", address(dao));
 
         // 5. Transfer token ownership to DAO
         token.transferOwnership(address(dao));
         console2.log("Token ownership transferred to DAO.");
+        require(token.owner() == address(dao), "DAO is not the owner of the token!");
+        console2.log("Ownership confirmed: DAO is the owner of the token.");
 
         vm.stopBroadcast();
     }

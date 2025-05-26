@@ -25,13 +25,15 @@ contract HealthInsuranceDAO is Ownable, ReentrancyGuard {
         Standard,
         Premium
     }
+
     struct Insuree {
-    address user;
-    Package packageType;
-    uint256 firstPaymentTimestamp;
-    bool isActive;
-    uint256 remainingCoverage;
+        address user;
+        Package packageType;
+        uint256 firstPaymentTimestamp;
+        bool isActive;
+        uint256 remainingCoverage;
     }
+
     mapping(address => Insuree) public insurees;
 
     mapping(address => Package) public userPackage;
@@ -83,20 +85,19 @@ contract HealthInsuranceDAO is Ownable, ReentrancyGuard {
         contributions[msg.sender] += remaining;
         lastPaidAt[msg.sender] = block.timestamp;
         userPackage[msg.sender] = selectedPackage;
-        
-        if (insurees[msg.sender].firstPaymentTimestamp == 0) {
-        insurees[msg.sender] = Insuree({
-            user: msg.sender,
-            packageType: selectedPackage,
-             firstPaymentTimestamp: block.timestamp,
-             isActive: true,
-             remainingCoverage: getMaxClaimable(msg.sender)
-        });
-        } else {
-        insurees[msg.sender].packageType = selectedPackage;
-        insurees[msg.sender].isActive = true;
-        }
 
+        if (insurees[msg.sender].firstPaymentTimestamp == 0) {
+            insurees[msg.sender] = Insuree({
+                user: msg.sender,
+                packageType: selectedPackage,
+                firstPaymentTimestamp: block.timestamp,
+                isActive: true,
+                remainingCoverage: getMaxClaimable(msg.sender)
+            });
+        } else {
+            insurees[msg.sender].packageType = selectedPackage;
+            insurees[msg.sender].isActive = true;
+        }
 
         emit FundsAdded(msg.sender, remaining, selectedPackage);
 
@@ -123,7 +124,6 @@ contract HealthInsuranceDAO is Ownable, ReentrancyGuard {
         yearlyClaims[msg.sender] += amount;
         insurees[msg.sender].remainingCoverage -= amount;
 
-
         claimId = claimCounter++;
         claims[claimId] = Claim({claimant: msg.sender, amount: amount, description: description, executed: false});
         emit ClaimSubmitted(msg.sender, claimId, amount);
@@ -136,7 +136,7 @@ contract HealthInsuranceDAO is Ownable, ReentrancyGuard {
         return 0;
     }
 
-    function executeClaim(uint256 claimId) external onlyOwner {
+    function executeClaim(uint256 claimId) external {
         Claim storage c = claims[claimId];
         if (c.executed) {
             revert HealthInsuranceDAO__AlreadyExecuted();
@@ -153,21 +153,18 @@ contract HealthInsuranceDAO is Ownable, ReentrancyGuard {
         revert("Use addFunds");
     }
 
-    function getInsureeInfo(address user) external view returns (
-         address insureeAddress,
-         Package packageType,
-         uint256 firstPaymentTimestamp,
-         bool isActive,
-         uint256 remainingCoverage
-     ) {
-         Insuree memory i = insurees[user];
-        return (
-         i.user,
-         i.packageType,
-         i.firstPaymentTimestamp,
-         i.isActive,
-         i.remainingCoverage
-      );
+    function getInsureeInfo(address user)
+        external
+        view
+        returns (
+            address insureeAddress,
+            Package packageType,
+            uint256 firstPaymentTimestamp,
+            bool isActive,
+            uint256 remainingCoverage
+        )
+    {
+        Insuree memory i = insurees[user];
+        return (i.user, i.packageType, i.firstPaymentTimestamp, i.isActive, i.remainingCoverage);
     }
-
 }

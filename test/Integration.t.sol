@@ -24,9 +24,14 @@ contract FixedClaimFlowTest is Test {
         token = new InsuranceToken(deployer);
         devVault = new DevVault();
         governor = new MyGovernor(IVotes(address(token)));
-        dao = new HealthInsuranceDAO(address(governor), deployer, address(token), devVault);
+        dao = new HealthInsuranceDAO(deployer, address(governor), address(token), devVault);
 
+        vm.prank(deployer);
         token.transferOwnership(address(dao));
+    }
+
+    function testTokenOwnership() public {
+        assertEq(token.owner(), address(dao), "DAO should be token owner");
     }
     //in order for this test to work in InsuranceGovernor.sol quorum function should be set to:
     //   function quorum(uint256 /* blockNumber */ ) public pure override returns (uint256) {
@@ -139,58 +144,59 @@ contract FixedClaimFlowTest is Test {
         vm.expectRevert(HealthInsuranceDAO.HealthInsuranceDAO__TxFail.selector);
         governor.execute(targets, values, calldatas, keccak256(bytes("Approve claim for user")));
     }
+
     function testClaimantReceivesEthAfterExecute() public {
-    // User subscribes
-    vm.prank(user);
-    dao.addFunds{value: 0.05 ether}(); // PREMIUM package
+        // User subscribes
+        vm.prank(user);
+        dao.addFunds{value: 0.05 ether}(); // PREMIUM package
 
-    // Snapshot and delegate
-    vm.roll(block.number + 1);
-    vm.prank(user);
-    token.delegate(user);
-    vm.roll(block.number + 1);
+        // Snapshot and delegate
+        vm.roll(block.number + 1);
+        vm.prank(user);
+        token.delegate(user);
+        vm.roll(block.number + 1);
 
-    // Submit claim
-    uint256 claimAmount = 0.01 ether;
-    vm.prank(user);
-    uint256 claimId = dao.submitClaim(claimAmount, "Emergency surgery");
+        // Submit claim
+        uint256 claimAmount = 0.01 ether;
+        vm.prank(user);
+        uint256 claimId = dao.submitClaim(claimAmount, "Emergency surgery");
 
-   // Prepare proposal calldata
+        // Prepare proposal calldata
         address[] memory targets = new address[](1);
         uint256[] memory values = new uint256[](1);
         bytes[] memory calldatas = new bytes[](1);
 
-    targets[0] = address(dao);
-    values[0] = 0;
-    calldatas[0] = abi.encodeWithSignature("executeClaim(uint256)", claimId);
+        targets[0] = address(dao);
+        values[0] = 0;
+        calldatas[0] = abi.encodeWithSignature("executeClaim(uint256)", claimId);
 
-    // Propose
-    vm.prank(user);
-    uint256 proposalId = governor.propose(targets, values, calldatas, "Approve claim");
+        // Propose
+        vm.prank(user);
+        uint256 proposalId = governor.propose(targets, values, calldatas, "Approve claim");
 
-    // Voting
-    vm.roll(block.number + governor.votingDelay() + 1);
-    vm.prank(user);
-    governor.castVote(proposalId, 1);
+        // Voting
+        vm.roll(block.number + governor.votingDelay() + 1);
+        vm.prank(user);
+        governor.castVote(proposalId, 1);
 
-    vm.roll(block.number + governor.votingPeriod() + 1);
-    vm.warp(block.timestamp + 1 days); // Ensure execution time is valid
+        vm.roll(block.number + governor.votingPeriod() + 1);
+        vm.warp(block.timestamp + 1 days); // Ensure execution time is valid
 
-    // Get user balance before execution
-    uint256 balanceBefore = user.balance;
+        // Get user balance before execution
+        uint256 balanceBefore = user.balance;
 
-    // Execute
-    vm.prank(user);
-    governor.execute(targets, values, calldatas, keccak256(bytes("Approve claim")));
+        // Execute
+        vm.prank(user);
+        governor.execute(targets, values, calldatas, keccak256(bytes("Approve claim")));
 
-    // Get user balance after execution
-    uint256 balanceAfter = user.balance;
+        // Get user balance after execution
+        uint256 balanceAfter = user.balance;
 
-    // Assert user received the correct amount
-    assertEq(balanceAfter - balanceBefore, claimAmount, "User did not receive correct claim amount");
+        // Assert user received the correct amount
+        assertEq(balanceAfter - balanceBefore, claimAmount, "User did not receive correct claim amount");
 
-    // Extra assert for internal state
-    (, , , bool executed) = dao.claims(claimId);
-    assertTrue(executed, "Claim should be marked as executed");
-}
+        // Extra assert for internal state
+        (,,, bool executed) = dao.claims(claimId);
+        assertTrue(executed, "Claim should be marked as executed");
+    }
 }
