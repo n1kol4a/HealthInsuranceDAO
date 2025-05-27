@@ -103,7 +103,7 @@ contract HealthInsuranceDAO is Ownable, ReentrancyGuard {
 
         uint256 amountToMint = 10 ether;
         insuranceToken.mint(msg.sender, amountToMint);
-        insuranceToken.delegate(msg.sender); //delegate votes to self for governance
+       // insuranceToken.delegate(msg.sender); //delegate votes to self for governance
     }
 
     function submitClaim(uint256 amount, string calldata description) external returns (uint256 claimId) {

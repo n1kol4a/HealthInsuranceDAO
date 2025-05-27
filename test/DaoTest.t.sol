@@ -7,24 +7,28 @@ import {InsuranceToken} from "../src/InsuranceToken.sol";
 import {DevVault} from "../src/DevVault.sol";
 import {HealthInsuranceDAO} from "../src/HealthInsuranceDAO.sol";
 import {MyGovernor} from "../src/InsuranceGovernor.sol";
-
+import {Governor} from "@openzeppelin/contracts/governance/Governor.sol";
+import {IVotes} from "@openzeppelin/contracts/governance/utils/IVotes.sol";
 contract DaoTest is Test {
-    InsuranceToken token;
-    DevVault vault;
-    HealthInsuranceDAO dao;
-    MyGovernor governor;
-    address user = makeAddr("user");
+    HealthInsuranceDAO public dao;
+    DevVault public devVault;
+    InsuranceToken public token;
+    MyGovernor public governor;
+
+    address public deployer;
+    address public user = address(1);
 
     function setUp() public {
-        token = new InsuranceToken(user);
-        vault = new DevVault();
-        governor = new MyGovernor(token);
-        dao = new HealthInsuranceDAO(address(governor), msg.sender, address(token), vault);
+        deployer = address(this);
+        vm.deal(user, 10 ether);
 
-        token.delegate(user);
-        vm.prank(user);
+        token = new InsuranceToken(deployer);
+        devVault = new DevVault();
+        governor = new MyGovernor(IVotes(address(token)));
+        dao = new HealthInsuranceDAO(deployer, address(governor), address(token), devVault);
+
+        vm.prank(deployer);
         token.transferOwnership(address(dao));
-        vm.deal(user, 1 ether);
     }
 
     function testAddFundsMintsTokens() public {
@@ -39,6 +43,7 @@ contract DaoTest is Test {
         vm.prank(user);
         dao.addFunds{value: 0.01 ether}();
     }
+
     function testInsureeDataFlow() public {
         // simulate addFunds
         vm.prank(user);
@@ -63,7 +68,7 @@ contract DaoTest is Test {
         uint256 claimId = dao.submitClaim(0.1 ether, "hospital treatment");
 
         // check remainingCoverage after claim
-        (, , , , uint256 updatedCoverage) = dao.getInsureeInfo(user);
+        (,,,, uint256 updatedCoverage) = dao.getInsureeInfo(user);
         assertEq(updatedCoverage, (0.05 ether * 12 * 5) - 0.1 ether);
     }
 }

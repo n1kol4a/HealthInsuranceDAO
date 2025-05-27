@@ -42,6 +42,8 @@ contract FixedClaimFlowTest is Test {
         // User subscribes and gets tokens + delegates
         vm.prank(user);
         dao.addFunds{value: 0.03 ether}(); // STANDARD package
+        uint256 votes = token.getVotes(user);
+        console2.log("Votes after addFunds:", votes);
 
         // Move forward to register snapshot
         vm.roll(block.number + 1);
@@ -198,5 +200,33 @@ contract FixedClaimFlowTest is Test {
         // Extra assert for internal state
         (,,, bool executed) = dao.claims(claimId);
         assertTrue(executed, "Claim should be marked as executed");
+    }
+
+    function testCannotPayTwiceInSameMonth() public {
+        vm.startPrank(user);
+
+        dao.addFunds{value: 0.01 ether}();
+
+        // Expect revert on second payment before 30 days
+        vm.expectRevert(HealthInsuranceDAO.HealthInsuranceDAO__AlreadyPaidThisMonth.selector);
+        dao.addFunds{value: 0.01 ether}();
+
+        vm.stopPrank();
+    }
+
+    function testSubmitClaimFailsIfNotSubscribed() public {
+        vm.prank(user);
+        vm.expectRevert(HealthInsuranceDAO.HealthInsuranceDAO__NotSubscribed.selector);
+        dao.submitClaim(0.01 ether, "Claim with no subscription");
+    }
+
+    function testSubmitClaimFailsIfClaimExceedsLimit() public {
+        vm.startPrank(user);
+        dao.addFunds{value: 0.01 ether}(); // Basic paket, 0.01 ETH mesečno
+
+        // Korisnik pokušava da claimuje više nego što mu pripada (limit = 0.01 * 12 * 5 = 0.6 ether)
+        vm.expectRevert(HealthInsuranceDAO.HealthInsuranceDAO__ClaimLimitExceeded.selector);
+        dao.submitClaim(1 ether, "Too big claim");
+        vm.stopPrank();
     }
 }
