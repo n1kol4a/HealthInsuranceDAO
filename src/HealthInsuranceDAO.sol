@@ -32,20 +32,10 @@ contract HealthInsuranceDAO is Ownable, ReentrancyGuard {
         uint256 firstPaymentTimestamp;
         bool isActive;
         uint256 remainingCoverage;
+        uint256 lastPaidAt;
+        uint256 yearlyClaims;
+        uint256 yearlyResetTimestamp;
     }
-
-    mapping(address => Insuree) public insurees;
-
-    mapping(address => Package) public userPackage;
-    mapping(address => uint256) public lastPaidAt;
-    mapping(address => uint256) public yearlyClaims;
-    mapping(address => uint256) public yearlyResetTimestamp;
-
-    mapping(address => uint256) public contributions;
-
-    event FundsAdded(address indexed user, uint256 amount, Package packageType);
-    event ClaimSubmitted(address indexed user, uint256 claimId, uint256 amount);
-    event ClaimExecuted(uint256 indexed claimId, address to, uint256 amount);
 
     struct Claim {
         address claimant;
@@ -54,8 +44,14 @@ contract HealthInsuranceDAO is Ownable, ReentrancyGuard {
         bool executed;
     }
 
+    mapping(address => Insuree) public insurees;
+    mapping(address => uint256) public contributions;
     mapping(uint256 => Claim) public claims;
     uint256 public claimCounter;
+
+    event FundsAdded(address indexed user, uint256 amount, Package packageType);
+    event ClaimSubmitted(address indexed user, uint256 claimId, uint256 amount);
+    event ClaimExecuted(uint256 indexed claimId, address to, uint256 amount);
 
     constructor(address _initialOwner, address _governor, address _token, DevVault _devVault) Ownable(_initialOwner) {
         insuranceToken = InsuranceToken(_token);
@@ -72,7 +68,8 @@ contract HealthInsuranceDAO is Ownable, ReentrancyGuard {
         else if (msg.value == 0.05 ether) selectedPackage = Package.Premium;
         else revert HealthInsuranceDAO__InvalidPackageAmount();
 
-        if (lastPaidAt[msg.sender] != 0 && block.timestamp < lastPaidAt[msg.sender] + 30 days) {
+        Insuree storage insuree = insurees[msg.sender];
+        if (insuree.lastPaidAt != 0 && block.timestamp < insuree.lastPaidAt + 30 days) {
             revert HealthInsuranceDAO__AlreadyPaidThisMonth();
         }
 
@@ -83,64 +80,57 @@ contract HealthInsuranceDAO is Ownable, ReentrancyGuard {
         if (!success) revert HealthInsuranceDAO__TxFail();
 
         contributions[msg.sender] += remaining;
-        lastPaidAt[msg.sender] = block.timestamp;
-        userPackage[msg.sender] = selectedPackage;
+        insuree.lastPaidAt = block.timestamp;
+        insuree.packageType = selectedPackage;
+        insuree.isActive = true;
 
-        if (insurees[msg.sender].firstPaymentTimestamp == 0) {
-            insurees[msg.sender] = Insuree({
-                user: msg.sender,
-                packageType: selectedPackage,
-                firstPaymentTimestamp: block.timestamp,
-                isActive: true,
-                remainingCoverage: getMaxClaimable(msg.sender)
-            });
-        } else {
-            insurees[msg.sender].packageType = selectedPackage;
-            insurees[msg.sender].isActive = true;
+        if (insuree.firstPaymentTimestamp == 0) {
+            insuree.user = msg.sender;
+            insuree.firstPaymentTimestamp = block.timestamp;
+            insuree.remainingCoverage = getMaxClaimable(msg.sender);
         }
 
         emit FundsAdded(msg.sender, remaining, selectedPackage);
 
-        uint256 amountToMint = 10 ether;
+        uint256 amountToMint = 10 * 10 ** 18;
         insuranceToken.mint(msg.sender, amountToMint);
-       // insuranceToken.delegate(msg.sender); //delegate votes to self for governance
     }
 
     function submitClaim(uint256 amount, string calldata description) external returns (uint256 claimId) {
-        if (userPackage[msg.sender] == Package.None) revert HealthInsuranceDAO__NotSubscribed();
+        Insuree storage insuree = insurees[msg.sender];
+        if (insuree.packageType == Package.None) revert HealthInsuranceDAO__NotSubscribed();
 
-        if (block.timestamp > yearlyResetTimestamp[msg.sender] + 365 days) {
-            yearlyClaims[msg.sender] = 0;
-            yearlyResetTimestamp[msg.sender] = block.timestamp;
-            insurees[msg.sender].remainingCoverage = getMaxClaimable(msg.sender);
+        if (block.timestamp > insuree.yearlyResetTimestamp + 365 days) {
+            insuree.yearlyClaims = 0;
+            insuree.yearlyResetTimestamp = block.timestamp;
+            insuree.remainingCoverage = getMaxClaimable(msg.sender);
         }
 
         uint256 maxClaimable = getMaxClaimable(msg.sender);
-
-        if (yearlyClaims[msg.sender] + amount > maxClaimable) {
+        if (insuree.yearlyClaims + amount > maxClaimable) {
             revert HealthInsuranceDAO__ClaimLimitExceeded();
         }
 
-        yearlyClaims[msg.sender] += amount;
-        insurees[msg.sender].remainingCoverage -= amount;
+        insuree.yearlyClaims += amount;
+        insuree.remainingCoverage -= amount;
 
         claimId = claimCounter++;
         claims[claimId] = Claim({claimant: msg.sender, amount: amount, description: description, executed: false});
+
         emit ClaimSubmitted(msg.sender, claimId, amount);
     }
 
     function getMaxClaimable(address user) public view returns (uint256) {
-        if (userPackage[user] == Package.Basic) return 0.01 ether * 12 * 5;
-        if (userPackage[user] == Package.Standard) return 0.03 ether * 12 * 5;
-        if (userPackage[user] == Package.Premium) return 0.05 ether * 12 * 5;
+        Package pkg = insurees[user].packageType;
+        if (pkg == Package.Basic) return 0.01 ether * 12 * 5;
+        if (pkg == Package.Standard) return 0.03 ether * 12 * 5;
+        if (pkg == Package.Premium) return 0.05 ether * 12 * 5;
         return 0;
     }
 
     function executeClaim(uint256 claimId) external {
         Claim storage c = claims[claimId];
-        if (c.executed) {
-            revert HealthInsuranceDAO__AlreadyExecuted();
-        }
+        if (c.executed) revert HealthInsuranceDAO__AlreadyExecuted();
 
         c.executed = true;
         emit ClaimExecuted(claimId, c.claimant, c.amount);
@@ -151,20 +141,5 @@ contract HealthInsuranceDAO is Ownable, ReentrancyGuard {
 
     receive() external payable {
         revert("Use addFunds");
-    }
-
-    function getInsureeInfo(address user)
-        external
-        view
-        returns (
-            address insureeAddress,
-            Package packageType,
-            uint256 firstPaymentTimestamp,
-            bool isActive,
-            uint256 remainingCoverage
-        )
-    {
-        Insuree memory i = insurees[user];
-        return (i.user, i.packageType, i.firstPaymentTimestamp, i.isActive, i.remainingCoverage);
     }
 }

@@ -12,14 +12,14 @@ contract MyGovernor is Governor, GovernorCountingSimple, GovernorVotes {
     constructor(IVotes _token) Governor("MyGovernor") GovernorVotes(_token) {}
 
     function votingDelay() public pure override returns (uint256) {
-        return 7200; // 1 day
+        return 1; // ~ 12 seconds
     }
 
     function votingPeriod() public pure override returns (uint256) {
-        return 50400; // 1 week
+        return 5; // ~ 1 minute
     }
 
     function quorum(uint256 /* blockNumber */ ) public pure override returns (uint256) {
-        return 10 * 10 ** 18; // 100 tokens as quorum
+        return 10 * 10 ** 18; // 10 tokens as quorum
     }
 }
