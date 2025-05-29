@@ -60,41 +60,42 @@ contract HealthInsuranceDAO is Ownable, ReentrancyGuard {
     }
 
     function addFunds() external payable nonReentrant {
-        if (msg.value == 0) revert HealthInsuranceDAO__MustSendEth();
+    if (msg.value == 0) revert HealthInsuranceDAO__MustSendEth();
 
-        Package selectedPackage;
-        if (msg.value == 0.01 ether) selectedPackage = Package.Basic;
-        else if (msg.value == 0.03 ether) selectedPackage = Package.Standard;
-        else if (msg.value == 0.05 ether) selectedPackage = Package.Premium;
-        else revert HealthInsuranceDAO__InvalidPackageAmount();
+    Package selectedPackage;
+    if (msg.value == 0.01 ether) selectedPackage = Package.Basic;
+    else if (msg.value == 0.03 ether) selectedPackage = Package.Standard;
+    else if (msg.value == 0.05 ether) selectedPackage = Package.Premium;
+    else revert HealthInsuranceDAO__InvalidPackageAmount();
 
-        Insuree storage insuree = insurees[msg.sender];
-        if (insuree.lastPaidAt != 0 && block.timestamp < insuree.lastPaidAt + 30 days) {
-            revert HealthInsuranceDAO__AlreadyPaidThisMonth();
-        }
+    Insuree storage insuree = insurees[msg.sender];
+    if (insuree.lastPaidAt != 0 && block.timestamp < insuree.lastPaidAt + 30 days) {
+        revert HealthInsuranceDAO__AlreadyPaidThisMonth();
+    }
 
-        uint256 fee = (msg.value * 5) / 100;
-        uint256 remaining = msg.value - fee;
+    uint256 fee = (msg.value * 5) / 100;
+    uint256 remaining = msg.value - fee;
 
-        (bool success,) = payable(devVault).call{value: fee}("");
-        if (!success) revert HealthInsuranceDAO__TxFail();
+    (bool success,) = payable(devVault).call{value: fee}("");
+    if (!success) revert HealthInsuranceDAO__TxFail();
 
-        contributions[msg.sender] += remaining;
-        insuree.lastPaidAt = block.timestamp;
-        insuree.packageType = selectedPackage;
-        insuree.isActive = true;
+    contributions[msg.sender] += remaining;
+    insuree.lastPaidAt = block.timestamp;
+    insuree.packageType = selectedPackage;
+    insuree.isActive = true;
 
-        if (insuree.firstPaymentTimestamp == 0) {
-            insuree.user = msg.sender;
-            insuree.firstPaymentTimestamp = block.timestamp;
-            insuree.remainingCoverage = getMaxClaimable(msg.sender);
-        }
+    if (insuree.firstPaymentTimestamp == 0) {
+        insuree.user = msg.sender;
+        insuree.firstPaymentTimestamp = block.timestamp;
+        insuree.remainingCoverage = getMaxClaimable(msg.sender);
 
-        emit FundsAdded(msg.sender, remaining, selectedPackage);
-
+        // Mint tokens only on first payment
         uint256 amountToMint = 10 * 10 ** 18;
         insuranceToken.mint(msg.sender, amountToMint);
     }
+    emit FundsAdded(msg.sender, remaining, selectedPackage);
+}
+
 
     function submitClaim(uint256 amount, string calldata description) external returns (uint256 claimId) {
         Insuree storage insuree = insurees[msg.sender];

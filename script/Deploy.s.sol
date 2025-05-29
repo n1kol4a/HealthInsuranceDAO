@@ -12,7 +12,7 @@ contract Deploy is Script {
         vm.startBroadcast();
 
         address deployer = msg.sender;
-
+        console.log("Deploying from:", msg.sender);
         // 1. Deploy InsuranceToken
         InsuranceToken token = new InsuranceToken(deployer);
         console2.log("InsuranceToken deployed at:", address(token));
