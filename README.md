@@ -1,66 +1,47 @@
-## Foundry
+# HealthInsuranceDAO
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+A modular, DAO-governed smart contract system for blockchain-based health coverage. Built with Foundry and OpenZeppelin Contracts.
 
-Foundry consists of:
+## 📁 Contracts Overview
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+### `HealthInsuranceDAO.sol`
+- Core contract for:
+  - User registration via ETH payments
+  - Membership tier selection
+  - Claim submission and tracking
+  - Fund routing to developer vault
+- Defines coverage packages (Basic, Standard, Premium)
+- Stores per-user payment history and coverage data
 
-## Documentation
+### `InsuranceToken.sol`
+- ERC20 token with `ERC20Votes`, `ERC20Permit`, and `Ownable`
+- Used for DAO governance
+- Supports minting and delegation
 
-https://book.getfoundry.sh/
+### `MyGovernor.sol`
+- Governance contract using OpenZeppelin Governor
+- Quorum: 10 tokens
+- Voting delay: 1 block (~12s)
+- Voting period: 5 blocks (~1 min)
 
-## Usage
+### `DevVault.sol`
+- Ownable vault for collecting dev fees (5% of user payments)
+- Manual withdrawals by owner
 
-### Build
+---
 
-```shell
-$ forge build
-```
+## 🔧 Tech Stack
 
-### Test
+- **Foundry** (Forge, Anvil)
+- **Solidity 0.8.27**
+- **OpenZeppelin Contracts v5**
+- **Sepolia testnet**
 
-```shell
-$ forge test
-```
+---
 
-### Format
+## ⚙️ Deployment
 
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+1. Clone the repo:
+```bash
+git clone https://github.com/n1kol4a/HealthInsuranceDAO
+cd HealthInsuranceDAO

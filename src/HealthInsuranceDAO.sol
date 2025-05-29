@@ -60,65 +60,91 @@ contract HealthInsuranceDAO is Ownable, ReentrancyGuard {
     }
 
     function addFunds() external payable nonReentrant {
-    if (msg.value == 0) revert HealthInsuranceDAO__MustSendEth();
+        if (msg.value == 0) revert HealthInsuranceDAO__MustSendEth();
 
-    Package selectedPackage;
-    if (msg.value == 0.01 ether) selectedPackage = Package.Basic;
-    else if (msg.value == 0.03 ether) selectedPackage = Package.Standard;
-    else if (msg.value == 0.05 ether) selectedPackage = Package.Premium;
-    else revert HealthInsuranceDAO__InvalidPackageAmount();
+        Package selectedPackage;
+        if (msg.value == 0.01 ether) selectedPackage = Package.Basic;
+        else if (msg.value == 0.03 ether) selectedPackage = Package.Standard;
+        else if (msg.value == 0.05 ether) selectedPackage = Package.Premium;
+        else revert HealthInsuranceDAO__InvalidPackageAmount();
 
-    Insuree storage insuree = insurees[msg.sender];
-    if (insuree.lastPaidAt != 0 && block.timestamp < insuree.lastPaidAt + 30 days) {
-        revert HealthInsuranceDAO__AlreadyPaidThisMonth();
+        Insuree storage insuree = insurees[msg.sender];
+        if (insuree.lastPaidAt != 0 && block.timestamp < insuree.lastPaidAt + 30 days) {
+            revert HealthInsuranceDAO__AlreadyPaidThisMonth();
+        }
+
+        uint256 fee = (msg.value * 5) / 100;
+        uint256 remaining = msg.value - fee;
+
+        (bool success,) = payable(devVault).call{value: fee}("");
+        if (!success) revert HealthInsuranceDAO__TxFail();
+
+        contributions[msg.sender] += remaining;
+        insuree.lastPaidAt = block.timestamp;
+        insuree.packageType = selectedPackage;
+        insuree.isActive = true;
+
+        if (insuree.firstPaymentTimestamp == 0) {
+            insuree.user = msg.sender;
+            insuree.firstPaymentTimestamp = block.timestamp;
+            insuree.remainingCoverage = getMaxClaimable(msg.sender);
+
+            uint256 amountToMint = 10 * 10 ** 18;
+            insuranceToken.mint(msg.sender, amountToMint);
+        }
+
+        emit FundsAdded(msg.sender, remaining, selectedPackage);
     }
-
-    uint256 fee = (msg.value * 5) / 100;
-    uint256 remaining = msg.value - fee;
-
-    (bool success,) = payable(devVault).call{value: fee}("");
-    if (!success) revert HealthInsuranceDAO__TxFail();
-
-    contributions[msg.sender] += remaining;
-    insuree.lastPaidAt = block.timestamp;
-    insuree.packageType = selectedPackage;
-    insuree.isActive = true;
-
-    if (insuree.firstPaymentTimestamp == 0) {
-        insuree.user = msg.sender;
-        insuree.firstPaymentTimestamp = block.timestamp;
-        insuree.remainingCoverage = getMaxClaimable(msg.sender);
-
-        // Mint tokens only on first payment
-        uint256 amountToMint = 10 * 10 ** 18;
-        insuranceToken.mint(msg.sender, amountToMint);
-    }
-    emit FundsAdded(msg.sender, remaining, selectedPackage);
-}
-
 
     function submitClaim(uint256 amount, string calldata description) external returns (uint256 claimId) {
         Insuree storage insuree = insurees[msg.sender];
         if (insuree.packageType == Package.None) revert HealthInsuranceDAO__NotSubscribed();
 
+        uint256 currentYearlyClaims = insuree.yearlyClaims;
+        uint256 currentRemainingCoverage = insuree.remainingCoverage;
+
         if (block.timestamp > insuree.yearlyResetTimestamp + 365 days) {
-            insuree.yearlyClaims = 0;
-            insuree.yearlyResetTimestamp = block.timestamp;
-            insuree.remainingCoverage = getMaxClaimable(msg.sender);
+            currentYearlyClaims = 0;
+            currentRemainingCoverage = getMaxClaimable(msg.sender);
         }
 
         uint256 maxClaimable = getMaxClaimable(msg.sender);
-        if (insuree.yearlyClaims + amount > maxClaimable) {
+        if (currentYearlyClaims + amount > maxClaimable || amount > currentRemainingCoverage) {
             revert HealthInsuranceDAO__ClaimLimitExceeded();
         }
-
-        insuree.yearlyClaims += amount;
-        insuree.remainingCoverage -= amount;
 
         claimId = claimCounter++;
         claims[claimId] = Claim({claimant: msg.sender, amount: amount, description: description, executed: false});
 
         emit ClaimSubmitted(msg.sender, claimId, amount);
+    }
+
+    function executeClaim(uint256 claimId) external {
+        Claim storage c = claims[claimId];
+        if (c.executed) revert HealthInsuranceDAO__AlreadyExecuted();
+
+        Insuree storage insuree = insurees[c.claimant];
+        if (insuree.packageType == Package.None) revert HealthInsuranceDAO__NotSubscribed();
+
+        if (block.timestamp > insuree.yearlyResetTimestamp + 365 days) {
+            insuree.yearlyClaims = 0;
+            insuree.yearlyResetTimestamp = block.timestamp;
+            insuree.remainingCoverage = getMaxClaimable(c.claimant);
+        }
+
+        uint256 maxClaimable = getMaxClaimable(c.claimant);
+        if (insuree.yearlyClaims + c.amount > maxClaimable || c.amount > insuree.remainingCoverage) {
+            revert HealthInsuranceDAO__ClaimLimitExceeded();
+        }
+
+        insuree.yearlyClaims += c.amount;
+        insuree.remainingCoverage -= c.amount;
+        c.executed = true;
+
+        emit ClaimExecuted(claimId, c.claimant, c.amount);
+
+        (bool success,) = payable(c.claimant).call{value: c.amount}("");
+        if (!success) revert HealthInsuranceDAO__TxFail();
     }
 
     function getMaxClaimable(address user) public view returns (uint256) {
@@ -127,17 +153,6 @@ contract HealthInsuranceDAO is Ownable, ReentrancyGuard {
         if (pkg == Package.Standard) return 0.03 ether * 12 * 5;
         if (pkg == Package.Premium) return 0.05 ether * 12 * 5;
         return 0;
-    }
-
-    function executeClaim(uint256 claimId) external {
-        Claim storage c = claims[claimId];
-        if (c.executed) revert HealthInsuranceDAO__AlreadyExecuted();
-
-        c.executed = true;
-        emit ClaimExecuted(claimId, c.claimant, c.amount);
-
-        (bool success,) = payable(c.claimant).call{value: c.amount}("");
-        if (!success) revert HealthInsuranceDAO__TxFail();
     }
 
     receive() external payable {
